@@ -9,7 +9,6 @@ from sklearn.pipeline import Pipeline
 from sklearn.metrics import mean_squared_error, r2_score, classification_report, accuracy_score
 from sklearn.svm import SVR
 from sklearn.ensemble import GradientBoostingRegressor
-from xgboost import XGBRegressor
 
 
 class CleanData:
@@ -150,78 +149,6 @@ class RunML:
     def __init__(self, df_agri):  # Add df_agri parameter
         self.df_agri_cleaned = df_agri
 
-    def get_best_regressor(self):
-        X = self.df_agri_cleaned.drop(['Temperature Sensor (°C)', 'Plant Type-Stage'], axis=1)
-        y = self.df_agri_cleaned['Temperature Sensor (°C)']
-
-        # Preprocessing steps
-        categorical_feature = ['Plant Type', 'Plant Stage']
-        categorical_transformer = Pipeline(steps=[
-            ('onehot', OneHotEncoder(handle_unknown='ignore'))  # Handle unknown categories during prediction
-        ])
-
-        numerical_features = X.select_dtypes(include=[np.number]).columns
-        numerical_transformer = Pipeline(steps=[
-            ('scaler', StandardScaler())
-        ])
-
-        preprocessor = ColumnTransformer(
-            transformers=[
-                ('num', numerical_transformer, numerical_features),
-                ('cat', categorical_transformer, categorical_feature)
-            ])
-
-        # Define models and their hyperparameter grids
-        models = {
-            'SVM': (SVR(), {
-                'model__kernel': ['linear', 'rbf', 'poly'],
-                'model__C': [0.1, 1, 10],
-                'model__gamma': ['scale', 'auto']
-            }),
-            'GradientBoosting': (GradientBoostingRegressor(), {
-                'model__n_estimators': [50, 100, 200],
-                'model__learning_rate': [0.01, 0.1, 0.2],
-                'model__max_depth': [3, 5, 7]
-            }),
-            'XGBoost': (XGBRegressor(), {
-                'model__n_estimators': [50, 100, 200],
-                'model__learning_rate': [0.01, 0.1, 0.2],
-                'model__max_depth': [3, 5, 7]
-            })
-        }
-
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-        best_model = None
-        best_score = -np.inf
-
-        # Loop through models, perform GridSearchCV and evaluate
-        for name, (model, param_grid) in models.items():
-            pipeline = Pipeline(steps=[
-                ('preprocessor', preprocessor),
-                ('model', model)
-            ])
-
-            grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='r2')
-            grid_search.fit(X_train, y_train)
-
-            y_pred = grid_search.predict(X_test)
-            r2 = r2_score(y_test, y_pred)
-
-            print(f"Model: {name}")
-            print(f"Best parameters: {grid_search.best_params_}")
-            print(f"R-squared: {r2:.3f}\n")
-
-            if r2 > best_score:
-                best_score = r2
-                best_model = grid_search.best_estimator_
-
-        print(f"Best Model: {best_model.named_steps['model']}")
-        print(f"Best R-squared: {best_score:.3f}")
-
-        return best_model
-
     def regression_model(self, model):
         print('Running regression model...')
         X = self.df_agri_cleaned.drop(['Temperature Sensor (°C)', 'Plant Type-Stage'],
@@ -266,8 +193,9 @@ class RunML:
         mse = mean_squared_error(y_test, y_pred)
         r2 = r2_score(y_test, y_pred)
 
+        print('Task 1a - Predict Temperature Model Result:')
         print(f"Mean Squared Error: {mse:.3f}")
-        print(f"R-squared: {r2:.3f}")
+        print(f"R-squared: {r2:.3f}\n")
 
         return r_pipeline
 
@@ -287,6 +215,8 @@ class RunML:
         y_pred = c_pipeline.predict(X_test)
 
         accuracy = accuracy_score(y_test, y_pred)
+
+        print('Task 1b - Predict Plant Type-Stage Model Result:')
         print(f"Accuracy: {accuracy:.3f}")
         print(classification_report(y_test, y_pred))
 
