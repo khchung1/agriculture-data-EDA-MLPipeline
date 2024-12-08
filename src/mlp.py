@@ -19,9 +19,12 @@ class CleanData:
         self.df_agri = None
         self.nutrient_cols = None
 
+    def get_data(self):
+            
+
     def load_data(self):
         # connect to the SQLite database
-        conn = sqlite3.connect('data/agri.db')
+        conn = sqlite3.connect('../data/agri.db')
         cursor = conn.cursor()
         # execute a query to get all table names
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
@@ -33,10 +36,10 @@ class CleanData:
         self.df_agri = pd.read_sql_query(query, conn)
 
         return self.df_agri
-
+    # drop Humidity Sensor
     def drop_humidity_sensor(self):
         return self.df_agri.drop(columns=['Humidity Sensor (%)'], inplace=True)
-
+    # remove duplicates
     def drop_duplicates(self):
         return self.df_agri.drop_duplicates(inplace=True)
 
@@ -55,6 +58,7 @@ class CleanData:
         return self.df_agri
 
     def remove_negative_values(self):
+
         def is_negative(col):
             return self.df_agri[col].min() < 0
 
@@ -103,23 +107,26 @@ class CleanData:
             lower_bound = q1 - 1.5 * iqr
             upper_bound = q3 + 1.5 * iqr
 
+            # get dataset within non outlier range
             df_no_outliers = self.df_agri[(self.df_agri[column] >= lower_bound) & (self.df_agri[column] <= upper_bound)]
 
             return df_no_outliers
-
+        # get only attributes with numerical datatype
         numeric_cols = self.df_agri.select_dtypes(include=[np.number]).columns
+        # write a function to remove outlier
         for column in numeric_cols:
             self.df_agri = check_and_remove_outliers(column)
 
         return self.df_agri
 
     def data_transformation(self):
-        # Combine the 3 attributes Nutrient N,P,K into one with their average
+        # combine the 3 attributes Nutrient N,P,K into one with their average
         self.df_agri['Nutrient NPK Sensors (ppm)'] = self.df_agri[self.nutrient_cols].mean(axis=1)
 
-        # Concat attributes Plant Type and Plant Stage as one
+        # concat attributes Plant Type and Plant Stage as one
         self.df_agri['Plant Type-Stage'] = self.df_agri['Plant Type'] + ' ' + self.df_agri['Plant Stage']
 
+        # remove columns
         cols_to_be_dropped = ['System Location Code', 'Previous Cycle Plant Type',
                               'Nutrient N Sensor (ppm)', 'Nutrient P Sensor (ppm)',
                               'Nutrient K Sensor (ppm)', 'pH Sensor']
@@ -127,7 +134,7 @@ class CleanData:
         self.df_agri.drop(columns=cols_to_be_dropped, inplace=True)
 
         return self.df_agri
-
+    # orchestrates the data cleaning process by calling the individual cleaning methods sequentially
     def data_cleaning_pipeline(self):
 
         self.load_data()
@@ -147,50 +154,51 @@ class CleanData:
 
 
 class RunML:
-    def __init__(self, df_agri):  # Add df_agri parameter
+    def __init__(self, df_agri):  # add df_agri parameter
         self.df_agri_cleaned = df_agri
-
+    # regression model for predicting Temperature
     def regression_model(self, model):
         print('Running regression model...')
+        # 1. Separate features (X) and target variable (y)
         X = self.df_agri_cleaned.drop(['Temperature Sensor (°C)', 'Plant Type-Stage'],
-                                      axis=1)  # Replace 'target_variable' with the actual name
+                                      axis=1)  
         y = self.df_agri_cleaned['Temperature Sensor (°C)']
 
-        # 3. Define preprocessing steps
-        # 3.1 One-hot encode the categorical feature
-        categorical_feature = ['Plant Type', 'Plant Stage']  # Replace with the actual name
-        categorical_transformer = Pipeline(steps=[
+        # 2. Define preprocessing steps
+        # 2.1 One-hot encode the categorical feature
+        categorical_feature = ['Plant Type', 'Plant Stage']  # identify the categorial features
+        categorical_transformer = Pipeline(steps=[           # one-hot encode the features and drop 1 column to prevent multicollinearity
             ('onehot', OneHotEncoder(drop='first'))
         ])
-        # 3.2 Scale the numerical features
+        # 2.2 Scale the numerical features
         numerical_features = X.select_dtypes(include=[np.number]).columns
         numerical_transformer = Pipeline(steps=[
             ('scaler', StandardScaler())
         ])
 
-        # 3.3 Combine transformers using ColumnTransformer
+        # 2.3 Combine transformers using ColumnTransformer
         preprocessor = ColumnTransformer(
             transformers=[
                 ('num', numerical_transformer, numerical_features),
                 ('cat', categorical_transformer, categorical_feature)
             ])
 
-        # 4. Create the pipeline with preprocessing and Random Forest
+        # 3. Create the pipeline with preprocessing and the provided model
         r_pipeline = Pipeline(steps=[
             ('preprocessor', preprocessor),
             model
         ])
 
-        # 5. Split the data into training and testing sets
+        # 4. Split the data into training and testing sets
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # 6. Train the pipeline
+        # 5. Train the pipeline
         r_pipeline.fit(X_train, y_train)
 
-        # 7. Make predictions on the test set
+        # 6. Make predictions on the test set
         y_pred = r_pipeline.predict(X_test)
 
-        # 8. Evaluate the model
+        # 7. Evaluate the model
         mse = mean_squared_error(y_test, y_pred)
         r2 = r2_score(y_test, y_pred)
 
@@ -202,21 +210,28 @@ class RunML:
 
     def classifier_model(self, model):
         print('Running classifier model...')
-        # 2. Separate features (X) and target variable (y)
+        # 1. Separate features (X) and target variable (y)
         X = self.df_agri_cleaned.drop(['Plant Type-Stage', 'Plant Type',
                                        'Plant Stage'], axis=1)  # Replace 'target_variable' with the actual column name
         y = self.df_agri_cleaned['Plant Type-Stage']
 
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        # 2. Create the pipeline with preprocessing and the provided model
         c_pipeline = Pipeline([('scaler', StandardScaler()),
                                model
                                ])
 
+        # 3. Split the data into training and testing sets
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        # 4. Train the pipeline
         c_pipeline.fit(X_train, y_train)
+
+        # 5. Make predictions on the test set
         y_pred = c_pipeline.predict(X_test)
 
+        # 6. Evaluate the model
         accuracy = accuracy_score(y_test, y_pred)
-
+        # accuracy score and classfication report
         print('Task 1b - Predict Plant Type-Stage Model Result:')
         print(f"Accuracy: {accuracy:.3f}")
         print(classification_report(y_test, y_pred))

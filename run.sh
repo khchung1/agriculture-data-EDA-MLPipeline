@@ -5,4 +5,4 @@
 cd src
 
 # Run index.py
-python index.py
+python mlp.py
