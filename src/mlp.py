@@ -11,6 +11,7 @@ from sklearn.svm import SVR
 from sklearn.ensemble import GradientBoostingRegressor
 
 
+
 class CleanData:
 
     def __init__(self):
@@ -20,7 +21,7 @@ class CleanData:
 
     def load_data(self):
         # connect to the SQLite database
-        conn = sqlite3.connect('../data/agri.db')
+        conn = sqlite3.connect('data/agri.db')
         cursor = conn.cursor()
         # execute a query to get all table names
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
