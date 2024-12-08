@@ -19,9 +19,6 @@ class CleanData:
         self.df_agri = None
         self.nutrient_cols = None
 
-    def get_data(self):
-            
-
     def load_data(self):
         # connect to the SQLite database
         conn = sqlite3.connect('../data/agri.db')
