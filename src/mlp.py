@@ -7,10 +7,11 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import mean_squared_error, r2_score, classification_report, accuracy_score
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
 
 
 class CleanData:
@@ -166,8 +167,8 @@ class MLPipeline:
         X = self.df_agri_cleaned.drop(['Temperature Sensor (°C)', 'Plant Type-Stage'], axis=1)
         y = self.df_agri_cleaned['Temperature Sensor (°C)']
 
-        # 2. define preprocessing steps
-        # 2.1 one-hot encode the categorical feature
+        # define preprocessing steps
+        # one-hot encode the categorical feature
         categorical_feature = ['Plant Type', 'Plant Stage']
         categorical_transformer = Pipeline(steps=[
             ('onehot', OneHotEncoder(handle_unknown='ignore', drop='first'))
@@ -185,7 +186,7 @@ class MLPipeline:
                 ('cat', categorical_transformer, categorical_feature)
             ])
 
-        # 3. define models and their hyperparameter grids
+        # define models and their hyperparameter grids
         # a nested dictionary with different regression model name as key, value as dictionary (inner).
         # the dictionary (inner) has the key that describe the value, and the value consist of model method and a list
         # of the parameter to tune.
@@ -212,10 +213,10 @@ class MLPipeline:
             }
         }
 
-        # 4. split the data into training and testing sets
+        # split the data into training and testing sets
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # 5. iterate through models, perform GridSearchCV, and evaluate
+        # iterate through models, perform GridSearchCV, and evaluate
         best_model = None
         best_score = -float('inf')
         # model_name in string, model_data consist of the model method and dictionary params as key-value pair/
@@ -314,6 +315,15 @@ class MLPipeline:
 
         # define models and their respective hyperparameter grids
         models = {
+
+            'Logistic Regression': {
+                'model': LogisticRegression(),
+                'params': {
+                    'model__solver': ['lbfgs', 'newton-cg', 'sag'],
+                    'model__penalty': ['l2', None],
+
+                }
+            },
             'SVM': {
                 'model': SVC(),
                 'params': {
