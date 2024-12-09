@@ -7,9 +7,10 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import mean_squared_error, r2_score, classification_report, accuracy_score
-from sklearn.svm import SVR
-from sklearn.ensemble import GradientBoostingRegressor
-
+from sklearn.linear_model import LinearRegression
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.svm import SVC
 
 
 class CleanData:
@@ -28,14 +29,16 @@ class CleanData:
         # fetch all results
         tables = cursor.fetchall()
         # execute an SQL query to fetch data from the table
-        query = "SELECT * FROM farm_data"
+        query = f'SELECT * FROM {tables[0][0]}'
         # load query into dataframe
         self.df_agri = pd.read_sql_query(query, conn)
 
         return self.df_agri
+
     # drop Humidity Sensor
     def drop_humidity_sensor(self):
         return self.df_agri.drop(columns=['Humidity Sensor (%)'], inplace=True)
+
     # remove duplicates
     def drop_duplicates(self):
         return self.df_agri.drop_duplicates(inplace=True)
@@ -81,13 +84,14 @@ class CleanData:
             # Calculate the mean of the column, ignoring NaN values
             column_mean = self.df_agri[col].mean()
             # Impute missing values with mean
-            self.df_agri[col].fillna(column_mean, inplace=True)
+
+            self.df_agri.fillna({col: column_mean}, inplace=True)
 
         for col in ['Temperature Sensor (°C)', 'Light Intensity Sensor (lux)', 'Water Level Sensor (mm)']:
             # Calculate the median of the column, ignoring NaN values
             column_median = self.df_agri[col].median()
             # Impute missing values with median
-            self.df_agri[col].fillna(column_median, inplace=True)
+            self.df_agri.fillna({col: column_median}, inplace=True)
 
         return self.df_agri
 
@@ -108,6 +112,7 @@ class CleanData:
             df_no_outliers = self.df_agri[(self.df_agri[column] >= lower_bound) & (self.df_agri[column] <= upper_bound)]
 
             return df_no_outliers
+
         # get only attributes with numerical datatype
         numeric_cols = self.df_agri.select_dtypes(include=[np.number]).columns
         # write a function to remove outlier
@@ -131,6 +136,7 @@ class CleanData:
         self.df_agri.drop(columns=cols_to_be_dropped, inplace=True)
 
         return self.df_agri
+
     # orchestrates the data cleaning process by calling the individual cleaning methods sequentially
     def data_cleaning_pipeline(self):
 
@@ -150,24 +156,23 @@ class CleanData:
         return self.df_agri
 
 
-class RunML:
+class MLPipeline:
     def __init__(self, df_agri):  # add df_agri parameter
         self.df_agri_cleaned = df_agri
-    # regression model for predicting Temperature
-    def regression_model(self, model):
-        print('Running regression model...')
-        # 1. Separate features (X) and target variable (y)
-        X = self.df_agri_cleaned.drop(['Temperature Sensor (°C)', 'Plant Type-Stage'],
-                                      axis=1)  
+
+    def best_regression_model(self):
+        print('\nFinding the best regression model...')
+        # 1. separate features (X) and target variable (y)
+        X = self.df_agri_cleaned.drop(['Temperature Sensor (°C)', 'Plant Type-Stage'], axis=1)
         y = self.df_agri_cleaned['Temperature Sensor (°C)']
 
-        # 2. Define preprocessing steps
-        # 2.1 One-hot encode the categorical feature
-        categorical_feature = ['Plant Type', 'Plant Stage']  # identify the categorial features
-        categorical_transformer = Pipeline(steps=[           # one-hot encode the features and drop 1 column to prevent multicollinearity
-            ('onehot', OneHotEncoder(drop='first'))
+        # 2. define preprocessing steps
+        # 2.1 one-hot encode the categorical feature
+        categorical_feature = ['Plant Type', 'Plant Stage']
+        categorical_transformer = Pipeline(steps=[
+            ('onehot', OneHotEncoder(handle_unknown='ignore', drop='first'))
         ])
-        # 2.2 Scale the numerical features
+        # 2.2 scale the numerical features
         numerical_features = X.select_dtypes(include=[np.number]).columns
         numerical_transformer = Pipeline(steps=[
             ('scaler', StandardScaler())
@@ -180,57 +185,208 @@ class RunML:
                 ('cat', categorical_transformer, categorical_feature)
             ])
 
-        # 3. Create the pipeline with preprocessing and the provided model
+        # 3. define models and their hyperparameter grids
+        # a nested dictionary with different regression model name as key, value as dictionary (inner).
+        # the dictionary (inner) has the key that describe the value, and the value consist of model method and a list
+        # of the parameter to tune.
+        models = {
+            'Linear Regression': {
+                'model': LinearRegression(),
+                'params': {}  # No hyperparameters to tune for basic linear regression
+            },
+            'Decision Tree': {
+                'model': DecisionTreeRegressor(random_state=42),
+                'params': {
+                    'model__max_depth': [3, 5, 7, 10],
+                    'model__min_samples_split': [2, 5, 10],
+                    'model__min_samples_leaf': [1, 2, 4]
+                }
+            },
+            'Random Forest': {
+                'model': RandomForestRegressor(random_state=42),
+                'params': {
+                    'model__n_estimators': [50, 100, 200],
+                    'model__max_depth': [None, 5, 10],
+                    'model__min_samples_split': [2, 5, 10]
+                }
+            }
+        }
+
+        # 4. split the data into training and testing sets
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        # 5. iterate through models, perform GridSearchCV, and evaluate
+        best_model = None
+        best_score = -float('inf')
+        # model_name in string, model_data consist of the model method and dictionary params as key-value pair/
+        for model_name, model_data in models.items():
+            print(f'\nEvaluating {model_name}...')
+            pipeline = Pipeline(steps=[
+                ('preprocessor', preprocessor),  # calls out the transformer
+                ('model', model_data['model'])   # calls out  model method
+            ])
+            # fine-tune hyperparameter, perform cross validation to get best model
+            grid_search = GridSearchCV(pipeline, model_data['params'], cv=5, scoring='r2')
+            grid_search.fit(X_train, y_train)
+
+            # prints out th best hyper-parameters of the model
+            print(f'Best parameters: {grid_search.best_params_}')
+            # predict X_test with the model with best hyperparameter
+            y_pred = grid_search.predict(X_test)
+            # get the mse score and print it
+            mse = mean_squared_error(y_test, y_pred)
+            # get R2 and print it
+            r2 = r2_score(y_test, y_pred)
+            print(f"Mean Squared Error: {mse:.3f}")
+            print(f"R-squared: {r2:.3f}")
+
+            # use if logic to get hte best r2
+            if r2 > best_score:
+                best_score = r2
+                # store the best model
+                best_model = grid_search.best_estimator_
+
+        print(f'\nBest Model: {best_model.named_steps["model"]}')
+        print(f'Best R-squared: {best_score:.3f}\n')
+
+        return best_model
+
+    # regression model for predicting Temperature
+    def regression_model(self, model):
+        print('\nRunning regression model...')
+        # separate features (X) and target variable (y)
+        X = self.df_agri_cleaned.drop(['Temperature Sensor (°C)', 'Plant Type-Stage'],
+                                      axis=1)
+        y = self.df_agri_cleaned['Temperature Sensor (°C)']
+
+        # define preprocessing steps
+        # one-hot encode the categorical feature
+        categorical_feature = ['Plant Type', 'Plant Stage']  # identify the categorial features
+        categorical_transformer = Pipeline(
+            steps=[  # one-hot encode the features and drop 1 column to prevent multicollinearity
+                ('onehot', OneHotEncoder(drop='first'))
+            ])
+        # scale the numerical features
+        numerical_features = X.select_dtypes(include=[np.number]).columns
+        numerical_transformer = Pipeline(steps=[
+            ('scaler', StandardScaler())
+        ])
+
+        # combine transformers using ColumnTransformer
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('num', numerical_transformer, numerical_features),
+                ('cat', categorical_transformer, categorical_feature)
+            ])
+
+        # create the pipeline with preprocessing and the provided model
         r_pipeline = Pipeline(steps=[
             ('preprocessor', preprocessor),
             model
         ])
 
-        # 4. Split the data into training and testing sets
+        # split the data into training and testing sets
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # 5. Train the pipeline
+        # train the pipeline
         r_pipeline.fit(X_train, y_train)
 
-        # 6. Make predictions on the test set
+        # make predictions on the test set
         y_pred = r_pipeline.predict(X_test)
 
-        # 7. Evaluate the model
+        # evaluate the model with mse and r2
         mse = mean_squared_error(y_test, y_pred)
         r2 = r2_score(y_test, y_pred)
-
-        print('Task 1a - Predict Temperature Model Result:')
+        #
+        print('Task 2a - Predict Temperature Model Result:')
         print(f"Mean Squared Error: {mse:.3f}")
         print(f"R-squared: {r2:.3f}\n")
 
         return r_pipeline
 
-    def classifier_model(self, model):
-        print('Running classifier model...')
-        # 1. Separate features (X) and target variable (y)
-        X = self.df_agri_cleaned.drop(['Plant Type-Stage', 'Plant Type',
-                                       'Plant Stage'], axis=1)  # Replace 'target_variable' with the actual column name
+    def best_classification_model(self):
+        # separate features (X) and target variable (y)
+        X = self.df_agri_cleaned.drop(['Plant Type-Stage', 'Plant Type', 'Plant Stage'], axis=1)
         y = self.df_agri_cleaned['Plant Type-Stage']
 
-        # 2. Create the pipeline with preprocessing and the provided model
+        # split the data into training and testing sets
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        # define models and their respective hyperparameter grids
+        models = {
+            'SVM': {
+                'model': SVC(),
+                'params': {
+                    'model__C': [0.1, 1, 10],
+                    'model__kernel': ['linear', 'rbf']
+                }
+            },
+            'Random Forest': {
+                'model': RandomForestClassifier(),
+                'params': {
+                    'model__n_estimators': [100, 200, 300],
+                    'model__max_depth': [None, 5, 10]
+                }
+            }
+        }
+
+        best_model = None
+        best_accuracy = 0
+
+        # iterate through models, perform GridSearchCV, and evaluate
+        for model_name, model_data in models.items():
+            print(f"Evaluating {model_name}...")
+
+            pipeline = Pipeline([
+                ('scaler', StandardScaler()),
+                ('model', model_data['model'])
+            ])
+
+            grid_search = GridSearchCV(pipeline, model_data['params'], cv=5, scoring='accuracy')
+            grid_search.fit(X_train, y_train)
+
+            y_pred = grid_search.predict(X_test)
+            accuracy = accuracy_score(y_test, y_pred)
+
+            print(f"Best parameters: {grid_search.best_params_}")
+            print(f"Accuracy: {accuracy:.3f}")
+            print(classification_report(y_test, y_pred))
+
+            if accuracy > best_accuracy:
+                best_accuracy = accuracy
+                best_model = grid_search.best_estimator_
+
+        print(f"\nBest Model: {best_model.named_steps['model']}")
+        print(f"Best Recall: {best_accuracy:.3f}")
+
+        return best_model
+
+    def classification_model(self, model):
+        print('Running classifier model...')
+        # separate features (X) and target variable (y)
+        X = self.df_agri_cleaned.drop(['Plant Type-Stage', 'Plant Type',
+                                       'Plant Stage'], axis=1)
+        y = self.df_agri_cleaned['Plant Type-Stage']
+
+        # create the pipeline with preprocessing and the provided model
         c_pipeline = Pipeline([('scaler', StandardScaler()),
                                model
                                ])
 
-        # 3. Split the data into training and testing sets
+        # split the data into training and testing sets
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # 4. Train the pipeline
+        # train the pipeline
         c_pipeline.fit(X_train, y_train)
 
-        # 5. Make predictions on the test set
+        # make predictions on the test set
         y_pred = c_pipeline.predict(X_test)
 
-        # 6. Evaluate the model
+        # evaluate the model
         accuracy = accuracy_score(y_test, y_pred)
-        # accuracy score and classfication report
-        print('Task 1b - Predict Plant Type-Stage Model Result:')
-        print(f"Accuracy: {accuracy:.3f}")
+        # accuracy score and classification report
+        print('Task 2b - Predict Plant Type-Stage Model Result:')
+        print(f"accuracy: {accuracy:.3f}")
         print(classification_report(y_test, y_pred))
 
         return c_pipeline
