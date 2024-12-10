@@ -8,7 +8,7 @@ AIAP 19 Technical Assessment
 ### b. Folder Structure Overview
     ├── .github
     ├── src
-    │   └── index.py
+    │   └── main.py
     |   └── mlp.py
     ├── README.md
     ├── eda.ipynb
@@ -17,8 +17,8 @@ AIAP 19 Technical Assessment
 
 ### c. Instruction - Pipeline Execution and Parameters Modification
 
-- Run index.py will execute end-to-end machine learning pipeline.
-index.py produced two results; 
+- Run main.py will execute end-to-end machine learning pipeline.
+main.py produced two results; 
   1. task_2a_result returns the model to predict temperature.
   2. task_2b_result returns the model to predict Plant Type-Stage.
 
@@ -27,9 +27,9 @@ use in one of the steps in Pipeline method from sklearn. Hence to change the ML 
 
 ### d. ML Pipeline Workflow
 
-The Execution the ML pipeline consist of index.py and mlp.py.
+The Execution the ML pipeline consist of main.py and mlp.py.
 
-**index.py**
+**main.py**
 
 This script orchestrates the data cleaning, preprocessing, model training, and evaluation process. 
 It utilizes the classes and methods defined in mlp.py.
