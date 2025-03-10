@@ -1,11 +1,5 @@
-# aiap19-chung-kok-hui-351b
-AIAP 19 Technical Assessment
 
-### a. Particulars
-    Name: Chung Kok Hui
-    Email: khchung87@gmail.com
-
-### b. Folder Structure Overview
+### a. Folder Structure Overview
     ├── .github
     ├── src
     │   └── main.py
